@@ -45,8 +45,8 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/00-daily-analysis.yml/runs?per_page=30&status=success")
           # 防重时间门槛：仅统计北京时间当天 CUT_H:CUT_M 之后的成功运行。
-          # 16:15 是 cron-job 闹钟时间；此前（凌晨/白天测试）的运行不算"今天已跑"，避免占用正式运行。
-          CUT_H=16; CUT_M=15
+          # 18:15 是 cron-job 闹钟时间；此前（凌晨/白天测试）的运行不算"今天已跑"，避免占用正式运行。
+          CUT_H=18; CUT_M=15
           COUNT=$(echo "$RUNS" | TODAY="$TODAY" CUT_H="$CUT_H" CUT_M="$CUT_M" python3 -c 'import json,sys,os,datetime; d=json.load(sys.stdin); bj=datetime.timezone(datetime.timedelta(hours=8)); cut=int(os.environ["CUT_H"])*60+int(os.environ["CUT_M"]); today=os.environ["TODAY"]; print(sum(1 for r in d.get("workflow_runs",[]) if r.get("conclusion")=="success" and r.get("created_at") and (lambda ct: ct.strftime("%Y-%m-%d")==today and ct.hour*60+ct.minute>=cut)(datetime.datetime.fromisoformat(r["created_at"].replace("Z","+00:00")).astimezone(bj))))' 2>/dev/null || echo 0)
           echo "今天($TODAY) ${CUT_H}:${CUT_M} 之后已有 $COUNT 次成功运行"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.force_run }}" = "true" ]; then
