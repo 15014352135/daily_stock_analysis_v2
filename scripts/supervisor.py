@@ -14,7 +14,7 @@ SLOT  = os.environ.get("SLOT", "")      # main / morning / afternoon
 
 # 每个时段对应的目标 workflow、展示名、计划时间、允许的成功时间窗（北京时间小时）
 CFG = {
-    "main":      {"target": "00-daily-analysis.yml", "label": "每日股票分析", "plan": "16:15", "win": (16, 24), "inputs": {"mode": "full", "force_run": "false"}},
+    "main":      {"target": "00-daily-analysis.yml", "label": "每日股票分析", "plan": "18:15", "win": (18, 24), "inputs": {"mode": "full", "force_run": "false"}},
     "morning":   {"target": "v7-morning.yml",        "label": "v7-盘前选股",  "plan": "08:35", "win": (6, 13),  "inputs": None},
     "afternoon": {"target": "v7-afternoon.yml",      "label": "v7-盘中选股",  "plan": "15:45", "win": (12, 24), "inputs": None},
 }
