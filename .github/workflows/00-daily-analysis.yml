@@ -634,7 +634,7 @@ jobs:
       - name: 写回股票列表指纹（供下次判断变化）
         if: success()
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
           CURRENT_STOCKS: ${{ vars.STOCK_LIST }}
         run: |
           echo "记录本次分析使用的股票: $CURRENT_STOCKS"
