@@ -39,6 +39,8 @@ jobs:
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_STOCKS: ${{ vars.STOCK_LIST }}
+          LAST_STOCKS: ${{ vars.LAST_ANALYZED_STOCK_LIST }}
         run: |
           TODAY=$(TZ=Asia/Shanghai date +%F)
           RUNS=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
@@ -49,11 +51,19 @@ jobs:
           CUT_H=18; CUT_M=15
           COUNT=$(echo "$RUNS" | TODAY="$TODAY" CUT_H="$CUT_H" CUT_M="$CUT_M" python3 -c 'import json,sys,os,datetime; d=json.load(sys.stdin); bj=datetime.timezone(datetime.timedelta(hours=8)); cut=int(os.environ["CUT_H"])*60+int(os.environ["CUT_M"]); today=os.environ["TODAY"]; print(sum(1 for r in d.get("workflow_runs",[]) if r.get("conclusion")=="success" and r.get("created_at") and (lambda ct: ct.strftime("%Y-%m-%d")==today and ct.hour*60+ct.minute>=cut)(datetime.datetime.fromisoformat(r["created_at"].replace("Z","+00:00")).astimezone(bj))))' 2>/dev/null || echo 0)
           echo "今天($TODAY) ${CUT_H}:${CUT_M} 之后已有 $COUNT 次成功运行"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.force_run }}" = "true" ]; then
+          # 股票列表指纹：若自选股发生变化，即使当天已跑过也要重新生成决策仪表盘
+          NORM_CURRENT=$(echo "$CURRENT_STOCKS" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' | sort -u | tr '\n' ',')
+          NORM_LAST=$(echo "$LAST_STOCKS" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | grep -v '^$' | sort -u | tr '\n' ',')
+          echo "本次股票: $NORM_CURRENT"
+          echo "上次股票: $NORM_LAST"
+          if [ "$NORM_CURRENT" != "$NORM_LAST" ]; then
+            echo "🔄 股票列表已变化，需要重跑（决策仪表盘）"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.force_run }}" = "true" ]; then
             echo "强制运行模式，跳过防重"
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           elif [ "$COUNT" -gt 0 ]; then
-            echo "今天已成功运行过，跳过（防重复）"
+            echo "今天已成功运行过且股票未变，跳过（防重复）"
             echo "should_run=false" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=true" >> "$GITHUB_OUTPUT"
@@ -63,6 +73,9 @@ jobs:
     needs: guard
     if: needs.guard.outputs.should_run == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write   # 用于写回 LAST_ANALYZED_STOCK_LIST 变量
     # 统一时区为北京时间：报告文件名/报告日期均用北京日期，避免凌晨跑出前一天报告
     env:
       TZ: Asia/Shanghai
@@ -618,6 +631,26 @@ jobs:
             logs/
           retention-days: 30
       
+      - name: 写回股票列表指纹（供下次判断变化）
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CURRENT_STOCKS: ${{ vars.STOCK_LIST }}
+        run: |
+          echo "记录本次分析使用的股票: $CURRENT_STOCKS"
+          PAYLOAD=$(CURRENT="$CURRENT_STOCKS" python3 -c 'import json,os;print(json.dumps({"value":os.environ["CURRENT"]}))')
+          CODE=$(curl -s -o /tmp/var_resp -w "%{http_code}" -X PATCH \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/variables/LAST_ANALYZED_STOCK_LIST" \
+            -d "$PAYLOAD")
+          echo "写回股票指纹 HTTP $CODE"
+          if [ "$CODE" != "200" ] && [ "$CODE" != "204" ]; then
+            echo "⚠️ 写回失败（需 actions:write 权限），不影响本次报告"
+            cat /tmp/var_resp 2>/dev/null || true
+          fi
+
       - name: 显示运行结果
         if: always()
         run: |
